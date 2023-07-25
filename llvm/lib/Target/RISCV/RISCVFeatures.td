@@ -1324,11 +1324,11 @@ def FeaturePredictableSelectIsExpensive
     : SubtargetFeature<"predictable-select-expensive", "PredictableSelectIsExpensive", "true",
                        "Prefer likely predicted branches over selects">;
 
-def FeatureGpu
-    : SubtargetFeature<"gpu", "HasExtGpu", "true", 
-                       "GPU ISA Extension">;
-def HasExtGpu : Predicate<"Subtarget->HasExtGpu()">; 
-
+def FeatureGroom
+    : SubtargetFeature<"groom", "HasExtGroom", "true", 
+                       "Groom GPU ISA Extension">;
+def HasExtGroom : Predicate<"Subtarget->HasExtGroom()">; 
+                                
 def TuneOptimizedZeroStrideLoad
    : SubtargetFeature<"optimized-zero-stride-load", "HasOptimizedZeroStrideLoad",
                       "true", "Optimized (perform fewer memory operations)"

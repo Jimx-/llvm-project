@@ -39,6 +39,8 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Vectorize/LoopIdiomVectorize.h"
+#include "llvm/Transforms/Utils.h"
+#include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 #include <optional>
 using namespace llvm;
 
@@ -170,6 +172,8 @@ RISCVTargetMachine::RISCVTargetMachine(const Target &T, const Triple &TT,
 
   if (TT.isOSFuchsia() && !TT.isArch64Bit())
     report_fatal_error("Fuchsia is only supported for 64-bit");
+
+  m_isGroom = FS.contains("groom");
 }
 
 const RISCVSubtarget *
@@ -330,9 +334,11 @@ static RVVRegisterRegAlloc fastRegAllocRVVReg("fast", "fast register allocator",
                                               createFastRVVRegisterAllocator);
 
 class RISCVPassConfig : public TargetPassConfig {
+  bool m_isGroom;
+
 public:
   RISCVPassConfig(RISCVTargetMachine &TM, PassManagerBase &PM)
-      : TargetPassConfig(TM, PM) {
+      : TargetPassConfig(TM, PM), m_isGroom(TM.isGroom()) {
     if (TM.getOptLevel() != CodeGenOptLevel::None)
       substitutePass(&PostRASchedulerID, &PostMachineSchedulerID);
     setEnableSinkAndFold(EnableSinkFold);
@@ -443,6 +449,14 @@ bool RISCVPassConfig::addPreISel() {
     addPass(createGlobalMergePass(TM, /* MaxOffset */ 2047,
                                   /* OnlyOptimizeForSize */ false,
                                   /* MergeExternalByDefault */ true));
+  }
+
+  if (getRISCVTargetMachine().isGroom()) {
+    addPass(createSinkingPass());
+    addPass(createLoopSimplifyCFGPass());
+    addPass(createLowerSwitchPass());
+    addPass(createFlattenCFGPass());
+    addPass(createStructurizeCFGPass(true));
   }
 
   return false;

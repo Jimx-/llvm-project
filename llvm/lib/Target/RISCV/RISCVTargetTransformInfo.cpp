@@ -1367,13 +1367,12 @@ InstructionCost RISCVTTIImpl::getStoreImmCost(Type *Ty,
 
   if (OpInfo.isUniform())
     // vmv.x.i, vmv.v.x, or vfmv.v.f
-    // We ignore the cost of the scalar constant materialization to be consistent
-    // with how we treat scalar constants themselves just above.
+    // We ignore the cost of the scalar constant materialization to be
+    // consistent with how we treat scalar constants themselves just above.
     return 1;
 
   return getConstantPoolLoadCost(Ty, CostKind);
 }
-
 
 InstructionCost RISCVTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
                                               MaybeAlign Alignment,
@@ -1689,7 +1688,7 @@ InstructionCost RISCVTTIImpl::getArithmeticInstrCost(
                                          Args, CxtI);
 
   auto getConstantMatCost =
-    [&](unsigned Operand, TTI::OperandValueInfo OpInfo) -> InstructionCost {
+      [&](unsigned Operand, TTI::OperandValueInfo OpInfo) -> InstructionCost {
     if (OpInfo.isUniform() && TLI->canSplatOperand(Opcode, Operand))
       // Two sub-cases:
       // * Has a 5 bit immediate operand which can be splatted.
@@ -1823,7 +1822,6 @@ void RISCVTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                            OptimizationRemarkEmitter *ORE) {
   // TODO: More tuning on benchmarks and metrics with changes as needed
   //       would apply to all settings below to enable performance.
-
 
   if (ST->enableDefaultUnroll())
     return BasicTTIImplBase::getUnrollingPreferences(L, SE, UP, ORE);
@@ -1968,3 +1966,5 @@ bool RISCVTTIImpl::areInlineCompatible(const Function *Caller,
   // target-features.
   return (CallerBits & CalleeBits) == CalleeBits;
 }
+
+bool RISCVTTIImpl::isSourceOfDivergence(const Value *v) { return DT.eval(v); }

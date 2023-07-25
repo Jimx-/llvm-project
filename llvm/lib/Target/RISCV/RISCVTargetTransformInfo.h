@@ -16,6 +16,7 @@
 #ifndef LLVM_LIB_TARGET_RISCV_RISCVTARGETTRANSFORMINFO_H
 #define LLVM_LIB_TARGET_RISCV_RISCVTARGETTRANSFORMINFO_H
 
+#include "GroomDivergenceTracker.h"
 #include "RISCVSubtarget.h"
 #include "RISCVTargetMachine.h"
 #include "llvm/Analysis/IVDescriptors.h"
@@ -34,6 +35,8 @@ class RISCVTTIImpl : public BasicTTIImplBase<RISCVTTIImpl> {
 
   const RISCVSubtarget *ST;
   const RISCVTargetLowering *TLI;
+
+  groom::DivergenceTracker DT;
 
   const RISCVSubtarget *getST() const { return ST; }
   const RISCVTargetLowering *getTLI() const { return TLI; }
@@ -58,7 +61,7 @@ class RISCVTTIImpl : public BasicTTIImplBase<RISCVTTIImpl> {
 public:
   explicit RISCVTTIImpl(const RISCVTargetMachine *TM, const Function &F)
       : BaseT(TM, F.getDataLayout()), ST(TM->getSubtargetImpl(F)),
-        TLI(ST->getTargetLowering()) {}
+        TLI(ST->getTargetLowering()), DT(F) {}
 
   bool areInlineCompatible(const Function *Caller,
                            const Function *Callee) const;
@@ -187,11 +190,11 @@ public:
                                            FastMathFlags FMF,
                                            TTI::TargetCostKind CostKind);
 
-  InstructionCost
-  getMemoryOpCost(unsigned Opcode, Type *Src, MaybeAlign Alignment,
-                  unsigned AddressSpace, TTI::TargetCostKind CostKind,
-                  TTI::OperandValueInfo OpdInfo = {TTI::OK_AnyValue, TTI::OP_None},
-                  const Instruction *I = nullptr);
+  InstructionCost getMemoryOpCost(
+      unsigned Opcode, Type *Src, MaybeAlign Alignment, unsigned AddressSpace,
+      TTI::TargetCostKind CostKind,
+      TTI::OperandValueInfo OpdInfo = {TTI::OK_AnyValue, TTI::OP_None},
+      const Instruction *I = nullptr);
 
   InstructionCost getCmpSelInstrCost(unsigned Opcode, Type *ValTy, Type *CondTy,
                                      CmpInst::Predicate VecPred,
@@ -399,6 +402,9 @@ public:
   }
 
   std::optional<unsigned> getMinPageSize() const { return 4096; }
+
+  bool isSourceOfDivergence(const Value *v);
+  bool hasBranchDivergence() { return true; }
 };
 
 } // end namespace llvm
