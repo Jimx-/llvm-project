@@ -506,10 +506,10 @@ def FeatureUnalignedScalarMem
                       "true", "Has reasonably performant unaligned scalar "
                       "loads and stores">;
 
-def FeatureGpu
-    : SubtargetFeature<"gpu", "HasExtGpu", "true", 
-                       "GPU ISA Extension">;
-def HasExtGpu : Predicate<"Subtarget->HasExtGpu()">; 
+def FeatureGroom
+    : SubtargetFeature<"groom", "HasExtGroom", "true", 
+                       "Groom GPU ISA Extension">;
+def HasExtGroom : Predicate<"Subtarget->HasExtGroom()">; 
                                 
 def TuneNoOptimizedZeroStrideLoad
    : SubtargetFeature<"no-optimized-zero-stride-load", "HasOptimizedZeroStrideLoad",

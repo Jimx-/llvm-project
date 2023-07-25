@@ -27,9 +27,8 @@ static cl::opt<unsigned> RVVRegisterWidthLMUL(
 
 static cl::opt<unsigned> SLPMaxVF(
     "riscv-v-slp-max-vf",
-    cl::desc(
-        "Result used for getMaximumVF query which is used exclusively by "
-        "SLP vectorizer.  Defaults to 1 which disables SLP."),
+    cl::desc("Result used for getMaximumVF query which is used exclusively by "
+             "SLP vectorizer.  Defaults to 1 which disables SLP."),
     cl::init(1), cl::Hidden);
 
 InstructionCost RISCVTTIImpl::getLMULCost(MVT VT) {
@@ -902,8 +901,8 @@ RISCVTTIImpl::getIntrinsicInstrCost(const IntrinsicCostAttributes &ICA,
 
   if (ST->hasVInstructions() && RetTy->isVectorTy()) {
     auto LT = getTypeLegalizationCost(RetTy);
-    if (const auto *Entry = CostTableLookup(VectorIntrinsicCostTable,
-                                            ICA.getID(), LT.second))
+    if (const auto *Entry =
+            CostTableLookup(VectorIntrinsicCostTable, ICA.getID(), LT.second))
       return LT.first * Entry->Cost;
   }
 
@@ -1089,8 +1088,8 @@ InstructionCost RISCVTTIImpl::getStoreImmCost(Type *Ty,
 
   if (OpInfo.isUniform())
     // vmv.x.i, vmv.v.x, or vfmv.v.f
-    // We ignore the cost of the scalar constant materialization to be consistent
-    // with how we treat scalar constants themselves just above.
+    // We ignore the cost of the scalar constant materialization to be
+    // consistent with how we treat scalar constants themselves just above.
     return 1;
 
   // Add a cost of address generation + the cost of the vector load. The
@@ -1099,7 +1098,6 @@ InstructionCost RISCVTTIImpl::getStoreImmCost(Type *Ty,
   return 2 + getMemoryOpCost(Instruction::Load, Ty, DL.getABITypeAlign(Ty),
                              /*AddressSpace=*/0, CostKind);
 }
-
 
 InstructionCost RISCVTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
                                               MaybeAlign Alignment,
@@ -1319,9 +1317,8 @@ InstructionCost RISCVTTIImpl::getArithmeticInstrCost(
     return BaseT::getArithmeticInstrCost(Opcode, Ty, CostKind, Op1Info, Op2Info,
                                          Args, CxtI);
 
-
   auto getConstantMatCost =
-    [&](unsigned Operand, TTI::OperandValueInfo OpInfo) -> InstructionCost {
+      [&](unsigned Operand, TTI::OperandValueInfo OpInfo) -> InstructionCost {
     if (OpInfo.isUniform() && TLI->canSplatOperand(Opcode, Operand))
       // Two sub-cases:
       // * Has a 5 bit immediate operand which can be splatted.
@@ -1363,9 +1360,9 @@ InstructionCost RISCVTTIImpl::getArithmeticInstrCost(
     return ConstantMatCost + getLMULCost(LT.second) * LT.first * 1;
   }
   default:
-    return ConstantMatCost +
-           BaseT::getArithmeticInstrCost(Opcode, Ty, CostKind, Op1Info, Op2Info,
-                                         Args, CxtI);
+    return ConstantMatCost + BaseT::getArithmeticInstrCost(Opcode, Ty, CostKind,
+                                                           Op1Info, Op2Info,
+                                                           Args, CxtI);
   }
 }
 
@@ -1374,7 +1371,6 @@ void RISCVTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                            OptimizationRemarkEmitter *ORE) {
   // TODO: More tuning on benchmarks and metrics with changes as needed
   //       would apply to all settings below to enable performance.
-
 
   if (ST->enableDefaultUnroll())
     return BasicTTIImplBase::getUnrollingPreferences(L, SE, UP, ORE);
@@ -1477,10 +1473,10 @@ unsigned RISCVTTIImpl::getMaximumVF(unsigned ElemWidth, unsigned Opcode) const {
 bool RISCVTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                                  const TargetTransformInfo::LSRCost &C2) {
   // RISCV specific here are "instruction number 1st priority".
-  return std::tie(C1.Insns, C1.NumRegs, C1.AddRecCost,
-                  C1.NumIVMuls, C1.NumBaseAdds,
-                  C1.ScaleCost, C1.ImmCost, C1.SetupCost) <
-         std::tie(C2.Insns, C2.NumRegs, C2.AddRecCost,
-                  C2.NumIVMuls, C2.NumBaseAdds,
-                  C2.ScaleCost, C2.ImmCost, C2.SetupCost);
+  return std::tie(C1.Insns, C1.NumRegs, C1.AddRecCost, C1.NumIVMuls,
+                  C1.NumBaseAdds, C1.ScaleCost, C1.ImmCost, C1.SetupCost) <
+         std::tie(C2.Insns, C2.NumRegs, C2.AddRecCost, C2.NumIVMuls,
+                  C2.NumBaseAdds, C2.ScaleCost, C2.ImmCost, C2.SetupCost);
 }
+
+bool RISCVTTIImpl::isSourceOfDivergence(const Value *v) { return DT.eval(v); }

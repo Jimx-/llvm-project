@@ -42,6 +42,7 @@ add_llvm_target(RISCVCodeGen
   RISCVTargetMachine.cpp
   RISCVTargetObjectFile.cpp
   RISCVTargetTransformInfo.cpp
+  GroomDivergenceTracker.cpp
   GISel/RISCVCallLowering.cpp
   GISel/RISCVInstructionSelector.cpp
   GISel/RISCVLegalizerInfo.cpp
@@ -62,6 +63,7 @@ add_llvm_target(RISCVCodeGen
   TargetParser
   TransformUtils
   GlobalISel
+  Scalar
 
   ADD_TO_COMPONENT
   RISCV

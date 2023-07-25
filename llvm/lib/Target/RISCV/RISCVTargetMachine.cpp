@@ -35,6 +35,9 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Utils.h"
+#include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 #include <optional>
 using namespace llvm;
 
@@ -111,6 +114,8 @@ RISCVTargetMachine::RISCVTargetMachine(const Target &T, const Triple &TT,
   // RISC-V supports the MachineOutliner.
   setMachineOutliner(true);
   setSupportsDefaultOutlining(true);
+
+  m_isGroom = FS.contains("groom");
 }
 
 const RISCVSubtarget *
@@ -218,9 +223,11 @@ bool RISCVTargetMachine::isNoopAddrSpaceCast(unsigned SrcAS,
 
 namespace {
 class RISCVPassConfig : public TargetPassConfig {
+  bool m_isGroom;
+
 public:
   RISCVPassConfig(RISCVTargetMachine &TM, PassManagerBase &PM)
-      : TargetPassConfig(TM, PM) {}
+      : TargetPassConfig(TM, PM), m_isGroom(TM.isGroom()) {}
 
   RISCVTargetMachine &getRISCVTargetMachine() const {
     return getTM<RISCVTargetMachine>();
@@ -292,6 +299,14 @@ bool RISCVPassConfig::addPreISel() {
     addPass(createGlobalMergePass(TM, /* MaxOffset */ 2047,
                                   /* OnlyOptimizeForSize */ false,
                                   /* MergeExternalByDefault */ true));
+  }
+
+  if (getRISCVTargetMachine().isGroom()) {
+    addPass(createSinkingPass());
+    addPass(createLoopSimplifyCFGPass());
+    addPass(createLowerSwitchPass());
+    addPass(createFlattenCFGPass());
+    addPass(createStructurizeCFGPass(true));
   }
 
   return false;
