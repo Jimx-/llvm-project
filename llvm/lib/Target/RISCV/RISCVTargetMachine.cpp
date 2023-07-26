@@ -105,6 +105,10 @@ static cl::opt<bool> EnableVSETVLIAfterRVVRegAlloc(
     cl::desc("Insert vsetvls after vector register allocation"),
     cl::init(true));
 
+static cl::opt<int> EnableGroomBranchDivergence(
+    "groom-branch-divergence",
+    cl::desc("Enable Branch Divergence Instrumentation"), cl::init(1));
+
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   RegisterTargetMachine<RISCVTargetMachine> X(getTheRISCV32Target());
   RegisterTargetMachine<RISCVTargetMachine> Y(getTheRISCV64Target());
@@ -130,6 +134,10 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVDAGToDAGISelLegacyPass(*PR);
   initializeRISCVMoveMergePass(*PR);
   initializeRISCVPushPopOptPass(*PR);
+
+  if (EnableGroomBranchDivergence) {
+    initializeGroomBranchDivergencePass(*PR);
+  }
 }
 
 static StringRef computeDataLayout(const Triple &TT,
@@ -451,12 +459,14 @@ bool RISCVPassConfig::addPreISel() {
                                   /* MergeExternalByDefault */ true));
   }
 
-  if (getRISCVTargetMachine().isGroom()) {
+  if (getRISCVTargetMachine().isGroom() && EnableGroomBranchDivergence) {
     addPass(createSinkingPass());
     addPass(createLoopSimplifyCFGPass());
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
+    addPass(createUnifyFunctionExitNodesPass());
     addPass(createStructurizeCFGPass(true));
+    addPass(createGroomBranchDivergencePass());
   }
 
   return false;

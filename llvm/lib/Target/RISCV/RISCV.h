@@ -93,6 +93,10 @@ void initializeRISCVO0PreLegalizerCombinerPass(PassRegistry &);
 
 FunctionPass *createRISCVPreLegalizerCombiner();
 void initializeRISCVPreLegalizerCombinerPass(PassRegistry &);
+
+FunctionPass *createGroomBranchDivergencePass();
+void initializeGroomBranchDivergencePass(PassRegistry &);
+
 } // namespace llvm
 
 #endif

@@ -21,11 +21,63 @@ using namespace llvm;
 DivergenceTracker::DivergenceTracker(const Function &F)
     : m_function(&F), m_initialized(false) {}
 
-void DivergenceTracker::initialize() { m_initialized = true; }
+void DivergenceTracker::initialize() {
+  for (auto &BB : *m_function) {
+    for (auto &I : BB) {
+      if (auto II = dyn_cast<llvm::IntrinsicInst>(&I)) {
+        if (II->getIntrinsicID() == llvm::Intrinsic::var_annotation) {
+          auto gv = dyn_cast<GlobalVariable>(II->getOperand(1));
+          auto cda = dyn_cast<ConstantDataArray>(gv->getInitializer());
+          if (cda->getAsCString() == "groom.uniform") {
+            Value *var_src = nullptr;
+            auto var = II->getOperand(0);
+            if (auto AI = dyn_cast<AllocaInst>(var)) {
+              var_src = AI;
+              LLVM_DEBUG(dbgs() << "*** uniform annotation: " << AI->getName()
+                                << "\n");
+            } else if (auto CI = dyn_cast<CastInst>(var)) {
+              var_src = CI->getOperand(0);
+              LLVM_DEBUG(dbgs() << "*** uniform annotation: " << CI->getName()
+                                << "\n");
+            }
+            m_uv.insert(var_src);
+          } else if (cda->getAsCString() == "groom.divergent") {
+            Value *var_src = nullptr;
+            auto var = II->getOperand(0);
+            if (auto AI = dyn_cast<AllocaInst>(var)) {
+              var_src = AI;
+              LLVM_DEBUG(dbgs() << "*** divergent annotation: " << AI->getName()
+                                << "\n");
+            } else if (auto CI = dyn_cast<CastInst>(var)) {
+              var_src = CI->getOperand(0);
+              LLVM_DEBUG(dbgs() << "*** divergent annotation: " << CI->getName()
+                                << "\n");
+            }
+            m_dv.insert(var_src);
+          }
+        }
+      }
+    }
+  }
+
+  m_initialized = true;
+}
 
 bool DivergenceTracker::eval(const Value *v) {
   if (!m_initialized) {
     initialize();
+  }
+
+  if (m_uv.count(v)) {
+    LLVM_DEBUG(dbgs() << "*** uniform annotated variable " << v->getName()
+                      << "\n");
+    return false;
+  }
+
+  if (m_dv.count(v)) {
+    LLVM_DEBUG(dbgs() << "*** divergent annotated variable " << v->getName()
+                      << "\n");
+    return true;
   }
 
   if (isa<AtomicRMWInst>(v) || isa<AtomicCmpXchgInst>(v)) {
@@ -34,7 +86,7 @@ bool DivergenceTracker::eval(const Value *v) {
     return true;
   } else if (auto CI = dyn_cast<CallInst>(v)) {
     if (!CI->isInlineAsm())
-      return false;
+      return true;
 
     auto CV = CI->getCalledOperand();
     if (const InlineAsm *IA = dyn_cast<InlineAsm>(CV)) {

@@ -56,6 +56,7 @@ add_llvm_target(RISCVCodeGen
   RISCVTargetTransformInfo.cpp
   RISCVVectorPeephole.cpp
   GroomDivergenceTracker.cpp
+  GroomBranchDivergence.cpp
   GISel/RISCVCallLowering.cpp
   GISel/RISCVInstructionSelector.cpp
   GISel/RISCVLegalizerInfo.cpp
