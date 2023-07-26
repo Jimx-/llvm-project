@@ -75,6 +75,10 @@ InstructionSelector *createRISCVInstructionSelector(const RISCVTargetMachine &,
                                                     RISCVSubtarget &,
                                                     RISCVRegisterBankInfo &);
 void initializeRISCVDAGToDAGISelPass(PassRegistry &);
+
+FunctionPass *createGroomBranchDivergencePass();
+void initializeGroomBranchDivergencePass(PassRegistry &);
+
 } // namespace llvm
 
 #endif

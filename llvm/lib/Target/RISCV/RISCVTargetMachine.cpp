@@ -70,6 +70,10 @@ static cl::opt<int> RVVVectorBitsMinOpt(
              "autovectorization with fixed width vectors."),
     cl::init(-1), cl::Hidden);
 
+static cl::opt<int> EnableGroomBranchDivergence(
+    "groom-branch-divergence",
+    cl::desc("Enable Branch Divergence Instrumentation"), cl::init(1));
+
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   RegisterTargetMachine<RISCVTargetMachine> X(getTheRISCV32Target());
   RegisterTargetMachine<RISCVTargetMachine> Y(getTheRISCV64Target());
@@ -85,6 +89,10 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVExpandPseudoPass(*PR);
   initializeRISCVInsertVSETVLIPass(*PR);
   initializeRISCVDAGToDAGISelPass(*PR);
+
+  if (EnableGroomBranchDivergence) {
+    initializeGroomBranchDivergencePass(*PR);
+  }
 }
 
 static StringRef computeDataLayout(const Triple &TT) {
@@ -301,12 +309,14 @@ bool RISCVPassConfig::addPreISel() {
                                   /* MergeExternalByDefault */ true));
   }
 
-  if (getRISCVTargetMachine().isGroom()) {
+  if (getRISCVTargetMachine().isGroom() && EnableGroomBranchDivergence) {
     addPass(createSinkingPass());
     addPass(createLoopSimplifyCFGPass());
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
+    addPass(createUnifyFunctionExitNodesPass());
     addPass(createStructurizeCFGPass(true));
+    addPass(createGroomBranchDivergencePass());
   }
 
   return false;
