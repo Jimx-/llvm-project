@@ -27,6 +27,9 @@ class GroomBranchDivergence : public FunctionPass {
   std::vector<BasicBlock *> m_div_bbs;
   DenseSet<BasicBlock *> m_div_bb_set;
 
+  std::vector<Loop *> m_loops;
+  DenseSet<Loop *> m_loop_set;
+
   LegacyDivergenceAnalysis *m_DA;
   DominatorTree *m_DT;
   PostDominatorTree *m_PDT;
@@ -35,12 +38,16 @@ class GroomBranchDivergence : public FunctionPass {
 
   Type *m_sizet_ty;
 
+  Function *m_tmask_func;
+  Function *m_tmc_func;
+  Function *m_pred_func;
   Function *m_split_func;
   Function *m_join_func;
 
   void initialize(Function &F, const RISCVSubtarget &ST);
 
   void processBranches(LLVMContext *context, Function *function);
+  void processLoops(LLVMContext *context, Function *function);
 
   bool isUniform(BranchInst *T);
 
@@ -129,6 +136,12 @@ void GroomBranchDivergence::initialize(Function &F, const RISCVSubtarget &ST) {
     LLVM_DEBUG(dbgs() << "Error: invalid pointer size: " << ptr_size << "\n");
   }
 
+  m_tmask_func =
+      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_tmask, {m_sizet_ty});
+  m_tmc_func =
+      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_tmc, {m_sizet_ty});
+  m_pred_func =
+      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_pred, {m_sizet_ty});
   m_split_func =
       Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_split, {m_sizet_ty});
   m_join_func = Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_join);
@@ -175,7 +188,23 @@ bool GroomBranchDivergence::runOnFunction(Function &F) {
     }
 
     auto loop = m_LI->getLoopFor(BB);
-    if (!loop) {
+    if (loop) {
+      auto ipdom = m_PDT->findNearestCommonDominator(Br->getSuccessor(0),
+                                                     Br->getSuccessor(1));
+      if (ipdom && loop->contains(ipdom)) {
+        if (m_div_bb_set.insert(BB).second) {
+          LLVM_DEBUG(dbgs() << "*** adding divergent branch: " << BB->getName()
+                            << "\n");
+          m_div_bbs.push_back(BB);
+        }
+      } else {
+        if (m_loop_set.insert(loop).second) {
+          LLVM_DEBUG(dbgs()
+                     << "*** adding divergent loop: " << BB->getName() << "\n");
+          m_loops.push_back(loop);
+        }
+      }
+    } else {
       auto ipdom = m_PDT->findNearestCommonDominator(Br->getSuccessor(0),
                                                      Br->getSuccessor(1));
       if (!ipdom) {
@@ -192,9 +221,17 @@ bool GroomBranchDivergence::runOnFunction(Function &F) {
     }
   }
 
-  if (!m_div_bbs.empty()) {
-    processBranches(&Context, &F);
-    m_div_bbs.clear();
+  if (!m_loops.empty() || !m_div_bbs.empty()) {
+    if (!m_loops.empty()) {
+      processLoops(&Context, &F);
+      m_loops.clear();
+      m_PDT->recalculate(F);
+    }
+
+    if (!m_div_bbs.empty()) {
+      processBranches(&Context, &F);
+      m_div_bbs.clear();
+    }
   }
 
   return true;
@@ -223,7 +260,7 @@ static void findSuccessor(BasicBlock *start, BasicBlock *target,
   findSuccessor(visited, start, target, out);
 }
 
-static void insertBasicBlock(const std::vector<BasicBlock *> BBs,
+static void insertBasicBlock(const std::vector<BasicBlock *> &BBs,
                              BasicBlock *succBB, BasicBlock *newBB) {
   DenseMap<std::pair<PHINode *, BasicBlock *>, PHINode *> phi_table;
   for (auto BB : BBs) {
@@ -270,7 +307,6 @@ void GroomBranchDivergence::processBranches(LLVMContext *context,
     auto BB = *BI;
     auto Br = dyn_cast<BranchInst>(BB->getTerminator());
     auto ipdom = ipdoms[BB];
-    auto region = m_RI->getRegionFor(BB);
 
     IRBuilder<> ir_builder(Br);
     auto cond = Br->getCondition();
@@ -288,6 +324,52 @@ void GroomBranchDivergence::processBranches(LLVMContext *context,
     std::vector<BasicBlock *> succs;
     findSuccessor(BB, ipdom, succs);
     insertBasicBlock(succs, ipdom, stub);
+  }
+}
+
+void GroomBranchDivergence::processLoops(LLVMContext *context,
+                                         Function *function) {
+  DenseSet<const BasicBlock *> stub_blocks;
+
+  for (auto it = m_loops.rbegin(); it != m_loops.rend(); ++it) {
+    auto loop = *it;
+
+    auto preheader = loop->getLoopPreheader();
+    auto preheader_br = dyn_cast<BranchInst>(preheader->getTerminator());
+
+    LLVM_DEBUG(dbgs() << "*** save tmask before preheader branch: "
+                      << preheader->getName() << "\n");
+    auto tmask = CallInst::Create(m_tmask_func, "tmask", preheader_br);
+
+    SmallVector<BasicBlock *, 8> exiting_blocks;
+    loop->getExitingBlocks(exiting_blocks);
+
+    for (auto &p : exiting_blocks) {
+      auto br = dyn_cast<BranchInst>(p->getTerminator());
+
+      for (auto succ : br->successors()) {
+        if (loop->contains(succ) || stub_blocks.count(succ) != 0)
+          continue;
+
+        IRBuilder<> ir_builder(br);
+        auto cond = br->getCondition();
+        auto cond_not = ir_builder.CreateNot(cond, cond->getName() + ".not");
+        auto cond_not_cast = ir_builder.CreateIntCast(
+            cond_not, m_sizet_ty, false, cond_not->getName() + ".i32");
+        LLVM_DEBUG(dbgs() << "*** insert predicate before loop exit: "
+                          << p->getName() << "\n");
+        CallInst::Create(m_pred_func, cond_not_cast, "", br);
+
+        auto stub =
+            BasicBlock::Create(*context, "loop_exit_stub", function, succ);
+        LLVM_DEBUG(dbgs() << "*** restore tmask before loop exit: "
+                          << succ->getName() << "\n");
+        stub_blocks.insert(stub);
+        auto stub_br = BranchInst::Create(succ, stub);
+        CallInst::Create(m_tmc_func, tmask, "", stub_br);
+        insertBasicBlock({p}, succ, stub);
+      }
+    }
   }
 }
 

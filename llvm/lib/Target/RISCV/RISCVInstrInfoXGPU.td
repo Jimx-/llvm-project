@@ -39,6 +39,26 @@ def GPU_RAST : RVInstR<0, 0, OPC_GPU, (outs GPR:$rd), (ins), "gpu_rast", "">, Sc
 
 }
 
+def CSR_WTID : SysReg<"wtid", 0xCC0>;
+def CSR_LTID : SysReg<"ltid", 0xCC1>;
+def CSR_GTID : SysReg<"gtid", 0xCC2>;
+def CSR_LWID : SysReg<"lwid", 0xCC3>;
+def CSR_GCID : SysReg<"gcid", 0xCC4>;
+def CSR_TMASK : SysReg<"tmask", 0xCC5>;
+
+def CSR_RASTPOS : SysReg<"rastpos", 0xCD0>;
+def CSR_RASTPID : SysReg<"rastpid", 0xCD1>;
+def CSR_RASTBCA : SysReg<"rastbca", 0xCD2>;
+def CSR_RASTBCB : SysReg<"rastbcb", 0xCD3>;
+def CSR_RASTBCC : SysReg<"rastbcc", 0xCD4>;
+def CSR_RASTMASK : SysReg<"rastmask", 0xCD5>;
+
+def CSR_MNT : SysReg<"mnt", 0xFC0>;
+def CSR_MNW : SysReg<"mnw", 0xFC1>;
+def CSR_MNC : SysReg<"mnc", 0xFC2>;
+
+def : Pat<(int_riscv_gpu_tmask), (CSRRS CSR_TMASK.Encoding, X0)>;
+
 def : Pat<(int_riscv_gpu_tmc GPR:$rs2), (GPU_TMC GPR:$rs2)>;
 
 def : Pat<(int_riscv_gpu_pred GPR:$rs2), (GPU_PRED GPR:$rs2)>;
