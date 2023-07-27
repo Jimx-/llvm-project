@@ -22,6 +22,9 @@ DivergenceTracker::DivergenceTracker(const Function &F)
     : m_function(&F), m_initialized(false) {}
 
 void DivergenceTracker::initialize() {
+  DenseSet<const Value *> dv_annotations;
+  DenseSet<const Value *> uv_annotations;
+
   for (auto &BB : *m_function) {
     for (auto &I : BB) {
       if (auto II = dyn_cast<llvm::IntrinsicInst>(&I)) {
@@ -41,6 +44,7 @@ void DivergenceTracker::initialize() {
                                 << "\n");
             }
             m_uv.insert(var_src);
+            uv_annotations.insert(var_src);
           } else if (cda->getAsCString() == "groom.divergent") {
             Value *var_src = nullptr;
             auto var = II->getOperand(0);
@@ -54,6 +58,32 @@ void DivergenceTracker::initialize() {
                                 << "\n");
             }
             m_dv.insert(var_src);
+            dv_annotations.insert(var_src);
+          }
+        }
+      }
+    }
+  }
+
+  for (auto &BB : *m_function) {
+    for (auto &I : BB) {
+      if (auto SI = dyn_cast<StoreInst>(&I)) {
+        auto addr = SI->getPointerOperand();
+        if (uv_annotations.count(addr) != 0) {
+          auto value = SI->getValueOperand();
+          if (auto CI = dyn_cast<CastInst>(value)) {
+            auto src = CI->getOperand(0);
+            m_uv.insert(src);
+          } else {
+            m_uv.insert(value);
+          }
+        } else if (dv_annotations.count(addr) != 0) {
+          auto value = SI->getValueOperand();
+          if (auto CI = dyn_cast<CastInst>(value)) {
+            auto src = CI->getOperand(0);
+            m_dv.insert(src);
+          } else {
+            m_dv.insert(value);
           }
         }
       }

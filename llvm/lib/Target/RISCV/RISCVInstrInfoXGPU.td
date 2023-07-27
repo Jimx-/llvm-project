@@ -32,7 +32,7 @@ def GPU_PRED : RVInstS<5, OPC_GPU_CTRL, (outs), (ins GPR:$rs2), "gpu_pred", "$rs
     let rs1   = 0;
 }
 
-def GPU_RAST : RVInstR<0, 0, OPC_GPU, (outs GPR:$rd), (ins), "gpu_rast", "">, Sched<[]> {
+def GPU_RAST : RVInstR<0, 0, OPC_GPU, (outs GPR:$rd), (ins), "gpu_rast", "$rd">, Sched<[]> {
     let rs1 = 0;
     let rs2 = 0;
 }
