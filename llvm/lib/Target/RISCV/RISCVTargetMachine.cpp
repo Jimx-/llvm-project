@@ -315,7 +315,7 @@ bool RISCVPassConfig::addPreISel() {
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
     addPass(createUnifyFunctionExitNodesPass());
-    addPass(createStructurizeCFGPass(true));
+    addPass(createStructurizeCFGPass(true, true));
     addPass(createGroomBranchDivergencePass());
   }
 

@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/LegacyDivergenceAnalysis.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/RegionInfo.h"
 #include "llvm/Analysis/RegionIterator.h"
 #include "llvm/Analysis/RegionPass.h"
@@ -59,10 +60,9 @@ const char FlowBlockName[] = "Flow";
 namespace {
 
 static cl::opt<bool> ForceSkipUniformRegions(
-  "structurizecfg-skip-uniform-regions",
-  cl::Hidden,
-  cl::desc("Force whether the StructurizeCFG pass skips uniform regions"),
-  cl::init(false));
+    "structurizecfg-skip-uniform-regions", cl::Hidden,
+    cl::desc("Force whether the StructurizeCFG pass skips uniform regions"),
+    cl::init(false));
 
 static cl::opt<bool>
     RelaxedUniformRegions("structurizecfg-relaxed-uniform-regions", cl::Hidden,
@@ -172,9 +172,7 @@ class NearestCommonDominator {
 public:
   explicit NearestCommonDominator(DominatorTree *DomTree) : DT(DomTree) {}
 
-  void addBlock(BasicBlock *BB) {
-    addBlock(BB, /* Remember = */ false);
-  }
+  void addBlock(BasicBlock *BB) { addBlock(BB, /* Remember = */ false); }
 
   void addAndRememberBlock(BasicBlock *BB) {
     addBlock(BB, /* Remember = */ true);
@@ -293,8 +291,7 @@ class StructurizeCFG {
 
   void killTerminator(BasicBlock *BB);
 
-  void changeExit(RegionNode *Node, BasicBlock *NewExit,
-                  bool IncludeDominator);
+  void changeExit(RegionNode *Node, BasicBlock *NewExit, bool IncludeDominator);
 
   BasicBlock *getNextFlow(BasicBlock *Dominator);
 
@@ -320,16 +317,21 @@ public:
   void init(Region *R);
   bool run(Region *R, DominatorTree *DT);
   bool makeUniformRegion(Region *R, LegacyDivergenceAnalysis *DA);
+  bool skipRegionalBranches(Region *R, LegacyDivergenceAnalysis *DA,
+                            PostDominatorTree *PDT);
 };
 
 class StructurizeCFGLegacyPass : public RegionPass {
   bool SkipUniformRegions;
+  bool SkipRegionalBranches;
 
 public:
   static char ID;
 
-  explicit StructurizeCFGLegacyPass(bool SkipUniformRegions_ = false)
-      : RegionPass(ID), SkipUniformRegions(SkipUniformRegions_) {
+  explicit StructurizeCFGLegacyPass(bool SkipUniformRegions_ = false,
+                                    bool SkipRegionalBranches_ = true)
+      : RegionPass(ID), SkipUniformRegions(SkipUniformRegions_),
+        SkipRegionalBranches(SkipRegionalBranches_) {
     if (ForceSkipUniformRegions.getNumOccurrences())
       SkipUniformRegions = ForceSkipUniformRegions.getValue();
     initializeStructurizeCFGLegacyPassPass(*PassRegistry::getPassRegistry());
@@ -343,6 +345,14 @@ public:
       if (SCFG.makeUniformRegion(R, DA))
         return false;
     }
+
+    if (SkipRegionalBranches) {
+      auto DA = &getAnalysis<LegacyDivergenceAnalysis>();
+      auto PDT = &getAnalysis<PostDominatorTreeWrapperPass>().getPostDomTree();
+      if (SCFG.skipRegionalBranches(R, DA, PDT))
+        return false;
+    }
+
     DominatorTree *DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
     return SCFG.run(R, DT);
   }
@@ -350,8 +360,10 @@ public:
   StringRef getPassName() const override { return "Structurize control flow"; }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
-    if (SkipUniformRegions)
+    if (SkipUniformRegions || SkipRegionalBranches)
       AU.addRequired<LegacyDivergenceAnalysis>();
+    if (SkipRegionalBranches)
+      AU.addRequired<PostDominatorTreeWrapperPass>();
     AU.addRequiredID(LowerSwitchID);
     AU.addRequired<DominatorTreeWrapperPass>();
 
@@ -369,6 +381,7 @@ INITIALIZE_PASS_BEGIN(StructurizeCFGLegacyPass, "structurizecfg",
 INITIALIZE_PASS_DEPENDENCY(LegacyDivergenceAnalysis)
 INITIALIZE_PASS_DEPENDENCY(LowerSwitchLegacyPass)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(PostDominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(RegionInfoPass)
 INITIALIZE_PASS_END(StructurizeCFGLegacyPass, "structurizecfg",
                     "Structurize the CFG", false, false)
@@ -851,10 +864,9 @@ void StructurizeCFG::changeExit(RegionNode *Node, BasicBlock *NewExit,
 /// Create a new flow node and update dominator tree and region info
 BasicBlock *StructurizeCFG::getNextFlow(BasicBlock *Dominator) {
   LLVMContext &Context = Func->getContext();
-  BasicBlock *Insert = Order.empty() ? ParentRegion->getExit() :
-                       Order.back()->getEntry();
-  BasicBlock *Flow = BasicBlock::Create(Context, FlowBlockName,
-                                        Func, Insert);
+  BasicBlock *Insert =
+      Order.empty() ? ParentRegion->getExit() : Order.back()->getEntry();
+  BasicBlock *Flow = BasicBlock::Create(Context, FlowBlockName, Func, Insert);
   FlowSet.insert(Flow);
 
   // use a temporary variable to avoid a use-after-free if the map's storage is
@@ -887,8 +899,7 @@ BasicBlock *StructurizeCFG::needPrefix(bool NeedEmpty) {
 }
 
 /// Returns the region exit if possible, otherwise just a new flow node
-BasicBlock *StructurizeCFG::needPostfix(BasicBlock *Flow,
-                                        bool ExitUseAllowed) {
+BasicBlock *StructurizeCFG::needPostfix(BasicBlock *Flow, bool ExitUseAllowed) {
   if (!Order.empty() || !ExitUseAllowed)
     return getNextFlow(Flow);
 
@@ -900,8 +911,7 @@ BasicBlock *StructurizeCFG::needPostfix(BasicBlock *Flow,
 
 /// Set the previous node
 void StructurizeCFG::setPrevNode(BasicBlock *BB) {
-  PrevNode = ParentRegion->contains(BB) ? ParentRegion->getBBNode(BB)
-                                        : nullptr;
+  PrevNode = ParentRegion->contains(BB) ? ParentRegion->getBBNode(BB) : nullptr;
 }
 
 /// Does BB dominate all the predicates of Node?
@@ -921,7 +931,7 @@ bool StructurizeCFG::isPredictableTrue(RegionNode *Node) {
   if (!PrevNode)
     return true;
 
-  for (std::pair<BasicBlock*, Value*> Pred : Preds) {
+  for (std::pair<BasicBlock *, Value *> Pred : Preds) {
     BasicBlock *BB = Pred.first;
     Value *V = Pred.second;
 
@@ -937,8 +947,7 @@ bool StructurizeCFG::isPredictableTrue(RegionNode *Node) {
 }
 
 /// Take one node from the order vector and wire it up
-void StructurizeCFG::wireFlow(bool ExitUseAllowed,
-                              BasicBlock *LoopEnd) {
+void StructurizeCFG::wireFlow(bool ExitUseAllowed, BasicBlock *LoopEnd) {
   RegionNode *Node = Order.pop_back_val();
   Visited.insert(Node->getEntry());
 
@@ -974,8 +983,7 @@ void StructurizeCFG::wireFlow(bool ExitUseAllowed,
   }
 }
 
-void StructurizeCFG::handleLoops(bool ExitUseAllowed,
-                                 BasicBlock *LoopEnd) {
+void StructurizeCFG::handleLoops(bool ExitUseAllowed, BasicBlock *LoopEnd) {
   RegionNode *Node = Order.back();
   BasicBlock *LoopStart = Node->getEntry();
 
@@ -1166,6 +1174,31 @@ bool StructurizeCFG::makeUniformRegion(Region *R,
   return false;
 }
 
+bool StructurizeCFG::skipRegionalBranches(Region *R,
+                                          LegacyDivergenceAnalysis *DA,
+                                          PostDominatorTree *PDT) {
+  for (auto E : R->elements()) {
+    if (E->isSubRegion())
+      continue;
+
+    auto BB = E->getEntry();
+    auto Br = dyn_cast<BranchInst>(BB->getTerminator());
+    if (Br == nullptr)
+      continue;
+    if (!Br->isConditional())
+      continue;
+    if (DA->isUniform(Br))
+      continue;
+
+    if (BB == R->getEntry())
+      continue;
+
+    return false;
+  }
+
+  return true;
+}
+
 /// Run the transformation for each region found
 bool StructurizeCFG::run(Region *R, DominatorTree *DT) {
   if (R->isTopLevelRegion())
@@ -1202,8 +1235,9 @@ bool StructurizeCFG::run(Region *R, DominatorTree *DT) {
   return true;
 }
 
-Pass *llvm::createStructurizeCFGPass(bool SkipUniformRegions) {
-  return new StructurizeCFGLegacyPass(SkipUniformRegions);
+Pass *llvm::createStructurizeCFGPass(bool SkipUniformRegions,
+                                     bool SkipRegionalBranches) {
+  return new StructurizeCFGLegacyPass(SkipUniformRegions, SkipRegionalBranches);
 }
 
 static void addRegionIntoQueue(Region &R, std::vector<Region *> &Regions) {

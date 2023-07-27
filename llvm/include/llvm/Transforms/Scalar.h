@@ -60,7 +60,6 @@ FunctionPass *createDeadCodeEliminationPass();
 //
 FunctionPass *createDeadStoreEliminationPass();
 
-
 //===----------------------------------------------------------------------===//
 //
 // CallSiteSplitting - This pass split call-site based on its known argument
@@ -83,7 +82,6 @@ FunctionPass *createAggressiveDCEPass();
 //
 FunctionPass *createGuardWideningPass();
 
-
 //===----------------------------------------------------------------------===//
 //
 // LoopGuardWidening - Analogous to the GuardWidening pass, but restricted to a
@@ -92,7 +90,6 @@ FunctionPass *createGuardWideningPass();
 // possible.
 //
 Pass *createLoopGuardWideningPass();
-
 
 //===----------------------------------------------------------------------===//
 //
@@ -270,7 +267,8 @@ FunctionPass *createFlattenCFGPass();
 ///
 /// When \p SkipUniformRegions is true the structizer will not structurize
 /// regions that only contain uniform branches.
-Pass *createStructurizeCFGPass(bool SkipUniformRegions = false);
+Pass *createStructurizeCFGPass(bool SkipUniformRegions = false,
+                               bool SkipRegionalBranches = false);
 
 //===----------------------------------------------------------------------===//
 //
@@ -536,13 +534,12 @@ Pass *createWarnMissedTransformationsPass();
 //
 FunctionPass *createInstSimplifyLegacyPass();
 
-
 //===----------------------------------------------------------------------===//
 //
 // createScalarizeMaskedMemIntrinPass - Replace masked load, store, gather
 // and scatter intrinsics with scalar code when target doesn't support them.
 //
 FunctionPass *createScalarizeMaskedMemIntrinLegacyPass();
-} // End llvm namespace
+} // namespace llvm
 
 #endif
