@@ -308,19 +308,25 @@ void GroomBranchDivergence::processBranches(LLVMContext *context,
     auto Br = dyn_cast<BranchInst>(BB->getTerminator());
     auto ipdom = ipdoms[BB];
     bool is_sfb =
-        ipdom == Br->getSuccessor(1) && m_div_bb_set.count(ipdom) == 0;
+        ipdom == Br->getSuccessor(0) ||
+        (ipdom == Br->getSuccessor(1) && m_div_bb_set.count(ipdom) == 0);
 
     IRBuilder<> ir_builder(Br);
     BasicBlock *stub = nullptr;
     auto cond = Br->getCondition();
-    auto cond_cast = ir_builder.CreateIntCast(cond, m_sizet_ty, false,
-                                              cond->getName() + ".i32");
 
     if (is_sfb) {
+      bool inv_cond = ipdom == Br->getSuccessor(0);
+
       LLVM_DEBUG(dbgs() << "*** save tmask before divergent branch: "
                         << BB->getName() << "\n");
       auto tmask = CallInst::Create(m_tmask_func, "tmask", Br);
 
+      if (inv_cond) {
+        cond = ir_builder.CreateNot(cond, cond->getName() + ".not");
+      }
+      auto cond_cast = ir_builder.CreateIntCast(cond, m_sizet_ty, false,
+                                                cond->getName() + ".i32");
       LLVM_DEBUG(dbgs() << "*** insert predicate before divergent branch: "
                         << BB->getName() << "\n");
       CallInst::Create(m_pred_func, cond_cast, "", Br);
@@ -331,6 +337,8 @@ void GroomBranchDivergence::processBranches(LLVMContext *context,
       auto stub_br = BranchInst::Create(ipdom, stub);
       CallInst::Create(m_tmc_func, tmask, "", stub_br);
     } else {
+      auto cond_cast = ir_builder.CreateIntCast(cond, m_sizet_ty, false,
+                                                cond->getName() + ".i32");
       LLVM_DEBUG(dbgs() << "*** insert split before divergent branch: "
                         << BB->getName() << "\n");
       CallInst::Create(m_split_func, cond_cast, "", Br);
