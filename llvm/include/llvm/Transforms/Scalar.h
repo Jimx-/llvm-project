@@ -93,7 +93,8 @@ FunctionPass *createFlattenCFGPass();
 ///
 /// When \p SkipUniformRegions is true the structizer will not structurize
 /// regions that only contain uniform branches.
-Pass *createStructurizeCFGPass(bool SkipUniformRegions = false);
+Pass *createStructurizeCFGPass(bool SkipUniformRegions = false,
+                               bool SkipRegionalBranches = false);
 
 //===----------------------------------------------------------------------===//
 //
@@ -206,13 +207,12 @@ FunctionPass *createLoopDataPrefetchPass();
 //
 FunctionPass *createInstSimplifyLegacyPass();
 
-
 //===----------------------------------------------------------------------===//
 //
 // createScalarizeMaskedMemIntrinPass - Replace masked load, store, gather
 // and scatter intrinsics with scalar code when target doesn't support them.
 //
 FunctionPass *createScalarizeMaskedMemIntrinLegacyPass();
-} // End llvm namespace
+} // namespace llvm
 
 #endif
