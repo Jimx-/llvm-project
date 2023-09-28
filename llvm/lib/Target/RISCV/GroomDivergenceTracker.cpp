@@ -110,6 +110,12 @@ bool DivergenceTracker::eval(const Value *v) {
     return true;
   }
 
+  if (isa<Argument>(v)) {
+    LLVM_DEBUG(dbgs() << "*** divergent function argument " << v->getName()
+                      << "\n");
+    return true;
+  }
+
   if (isa<AtomicRMWInst>(v) || isa<AtomicCmpXchgInst>(v)) {
     LLVM_DEBUG(dbgs() << "*** divergent atomic variable " << v->getName()
                       << "\n");
