@@ -116,43 +116,15 @@ bool DivergenceTracker::eval(const Value *v) {
     return true;
   }
 
+  if (isa<CallInst>(v)) {
+    LLVM_DEBUG(dbgs() << "*** divergent return value " << v->getName() << "\n");
+    return true;
+  }
+
   if (isa<AtomicRMWInst>(v) || isa<AtomicCmpXchgInst>(v)) {
     LLVM_DEBUG(dbgs() << "*** divergent atomic variable " << v->getName()
                       << "\n");
     return true;
-  } else if (auto CI = dyn_cast<CallInst>(v)) {
-    if (!CI->isInlineAsm())
-      return true;
-
-    auto CV = CI->getCalledOperand();
-    if (const InlineAsm *IA = dyn_cast<InlineAsm>(CV)) {
-      auto &asm_str = IA->getAsmString();
-
-      if (asm_str.substr(0, 4) == "csrr") {
-        auto AO = CI->getArgOperand(0);
-        if (const ConstantInt *C = dyn_cast<ConstantInt>(AO)) {
-          switch (C->getValue().extractBitsAsZExtValue(12, 0)) {
-          case CSR_WTID:
-          case CSR_LTID:
-          case CSR_GTID:
-          case CSR_RASTPOS:
-          case CSR_RASTPID:
-          case CSR_RASTBCA:
-          case CSR_RASTBCB:
-          case CSR_RASTBCC:
-          case CSR_RASTMASK:
-
-            LLVM_DEBUG(dbgs() << "*** divergent csr variable " << v->getName()
-                              << "\n");
-            m_dv.insert(v);
-            return true;
-
-          default:
-            break;
-          }
-        }
-      }
-    }
   } else if (auto ST = dyn_cast<StoreInst>(v)) {
     auto addr = ST->getPointerOperand();
     if (dyn_cast<AllocaInst>(addr) != NULL) {
@@ -164,12 +136,10 @@ bool DivergenceTracker::eval(const Value *v) {
   } else if (auto LD = dyn_cast<LoadInst>(v)) {
     auto addr = LD->getPointerOperand();
     if (dyn_cast<AllocaInst>(addr) != NULL) {
-      if (m_dv.count(addr)) {
-        LLVM_DEBUG(dbgs() << "*** divergent load variable " << v->getName()
-                          << "\n");
-        m_dv.insert(v);
-        return true;
-      }
+      LLVM_DEBUG(dbgs() << "*** divergent load variable " << v->getName()
+                        << "\n");
+      m_dv.insert(v);
+      return true;
     }
   }
 
