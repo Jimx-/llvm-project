@@ -36,6 +36,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/Scalarizer.h"
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 #include <optional>
@@ -91,6 +92,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVDAGToDAGISelPass(*PR);
 
   if (EnableGroomBranchDivergence) {
+    initializeGroomBranchDivergencePrePass(*PR);
     initializeGroomBranchDivergencePass(*PR);
   }
 }
@@ -310,11 +312,13 @@ bool RISCVPassConfig::addPreISel() {
   }
 
   if (getRISCVTargetMachine().isGroom() && EnableGroomBranchDivergence) {
+    addPass(createScalarizerPass());
     addPass(createSinkingPass());
     addPass(createLoopSimplifyCFGPass());
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
     addPass(createUnifyFunctionExitNodesPass());
+    addPass(createGroomBranchDivergencePrePass());
     addPass(createStructurizeCFGPass(true, true));
     addPass(createGroomBranchDivergencePass());
   }

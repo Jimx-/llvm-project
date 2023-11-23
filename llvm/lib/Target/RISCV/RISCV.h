@@ -76,6 +76,9 @@ InstructionSelector *createRISCVInstructionSelector(const RISCVTargetMachine &,
                                                     RISCVRegisterBankInfo &);
 void initializeRISCVDAGToDAGISelPass(PassRegistry &);
 
+FunctionPass *createGroomBranchDivergencePrePass();
+void initializeGroomBranchDivergencePrePass(PassRegistry &);
+
 FunctionPass *createGroomBranchDivergencePass();
 void initializeGroomBranchDivergencePass(PassRegistry &);
 
