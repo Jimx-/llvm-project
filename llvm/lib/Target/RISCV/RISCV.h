@@ -94,6 +94,9 @@ void initializeRISCVO0PreLegalizerCombinerPass(PassRegistry &);
 FunctionPass *createRISCVPreLegalizerCombiner();
 void initializeRISCVPreLegalizerCombinerPass(PassRegistry &);
 
+FunctionPass *createGroomBranchDivergencePrePass();
+void initializeGroomBranchDivergencePrePass(PassRegistry &);
+
 FunctionPass *createGroomBranchDivergencePass();
 void initializeGroomBranchDivergencePass(PassRegistry &);
 

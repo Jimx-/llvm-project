@@ -6,7 +6,14 @@
 #include "llvm/Support/Debug.h"
 
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicsRISCV.h"
+
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Utils.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/LegacyDivergenceAnalysis.h"
@@ -21,6 +28,22 @@
 using namespace llvm;
 
 namespace groom {
+
+class GroomBranchDivergencePre : public FunctionPass {
+private:
+  LegacyDivergenceAnalysis *DA_;
+
+public:
+  static char ID;
+
+  GroomBranchDivergencePre();
+
+  StringRef getPassName() const override;
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override;
+
+  bool runOnFunction(Function &F) override;
+};
 
 class GroomBranchDivergence : public FunctionPass {
 
@@ -66,16 +89,25 @@ public:
 } // namespace groom
 
 using groom::GroomBranchDivergence;
+using groom::GroomBranchDivergencePre;
 
 namespace llvm {
 
+void initializeGroomBranchDivergencePrePass(PassRegistry &);
 void initializeGroomBranchDivergencePass(PassRegistry &);
+
+FunctionPass *createGroomBranchDivergencePrePass() {
+  return new GroomBranchDivergencePre();
+}
 
 FunctionPass *createGroomBranchDivergencePass() {
   return new GroomBranchDivergence();
 }
 
 } // namespace llvm
+
+INITIALIZE_PASS(GroomBranchDivergencePre, "groom-branch-divergence-pre",
+                "Groom Branch Divergence Prepass", false, false);
 
 INITIALIZE_PASS_BEGIN(GroomBranchDivergence, "groom-branch-divergence",
                       "Groom Branch Divergence", false, false)
@@ -90,6 +122,66 @@ INITIALIZE_PASS_END(GroomBranchDivergence, "groom-branch-divergence",
                     "Groom Branch Divergence", false, false)
 
 namespace groom {
+
+char GroomBranchDivergencePre::ID = 0;
+
+StringRef GroomBranchDivergencePre::getPassName() const {
+  return "Groom Branch Divergence Prepass";
+}
+
+GroomBranchDivergencePre::GroomBranchDivergencePre() : FunctionPass(ID) {
+  initializeGroomBranchDivergencePrePass(*PassRegistry::getPassRegistry());
+}
+
+void GroomBranchDivergencePre::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addPreservedID(BreakCriticalEdgesID);
+  AU.addPreservedID(LowerSwitchID);
+  AU.addRequired<LegacyDivergenceAnalysis>();
+  AU.addRequired<TargetPassConfig>();
+  FunctionPass::getAnalysisUsage(AU);
+}
+
+bool GroomBranchDivergencePre::runOnFunction(Function &F) {
+  auto &Context = F.getContext();
+  const auto &TPC = getAnalysis<TargetPassConfig>();
+  const auto &TM = TPC.getTM<TargetMachine>();
+  const auto &ST = TM.getSubtarget<RISCVSubtarget>(F);
+  if (!ST.hasExtGroom())
+    return false;
+
+  DA_ = &getAnalysis<LegacyDivergenceAnalysis>();
+
+  bool changed = false;
+
+  SmallVector<SelectInst *, 4> selects;
+
+  for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+    if (auto SI = dyn_cast<SelectInst>(&*I)) {
+      if (DA_->isUniform(SI))
+        continue;
+      LLVM_DEBUG(
+          dbgs()
+          << "*** lowering divergent select instruction to if-then-else: "
+          << *SI << "\n");
+      selects.emplace_back(SI);
+    }
+  }
+
+  for (auto SI : selects) {
+    auto BB = SI->getParent();
+    SplitBlockAndInsertIfThen(SI->getCondition(), SI, false);
+    auto CondBr = cast<BranchInst>(BB->getTerminator());
+    auto ThenBB = CondBr->getSuccessor(0);
+    auto Phi = PHINode::Create(SI->getType(), 2, "unswitched.select", SI);
+    Phi->addIncoming(SI->getTrueValue(), ThenBB);
+    Phi->addIncoming(SI->getFalseValue(), BB);
+    SI->replaceAllUsesWith(Phi);
+    SI->eraseFromParent();
+    changed = true;
+  }
+
+  return changed;
+}
 
 char GroomBranchDivergence::ID = 0;
 
