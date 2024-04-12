@@ -67,7 +67,14 @@ void DivergenceTracker::initialize() {
 
   for (auto &BB : *m_function) {
     for (auto &I : BB) {
-      if (auto SI = dyn_cast<StoreInst>(&I)) {
+      if (auto GE = dyn_cast<GetElementPtrInst>(&I)) {
+        auto addr = GE->getPointerOperand();
+        if (uv_annotations.count(addr) != 0) {
+          m_uv.insert(GE);
+        } else if (dv_annotations.count(addr) != 0) {
+          m_dv.insert(GE);
+        }
+      } else if (auto SI = dyn_cast<StoreInst>(&I)) {
         auto addr = SI->getPointerOperand();
         if (uv_annotations.count(addr) != 0) {
           auto value = SI->getValueOperand();
@@ -125,6 +132,16 @@ bool DivergenceTracker::eval(const Value *v) {
     LLVM_DEBUG(dbgs() << "*** divergent atomic variable " << v->getName()
                       << "\n");
     return true;
+  }
+
+  if (auto GE = dyn_cast<GetElementPtrInst>(v)) {
+    auto addr = GE->getPointerOperand();
+    if (dyn_cast<AllocaInst>(addr) != NULL) {
+      LLVM_DEBUG(dbgs() << "*** divergent GEP variable " << v->getName()
+                        << "\n");
+      m_dv.insert(v);
+      return true;
+    }
   } else if (auto ST = dyn_cast<StoreInst>(v)) {
     auto addr = ST->getPointerOperand();
     if (dyn_cast<AllocaInst>(addr) != NULL) {
@@ -136,6 +153,12 @@ bool DivergenceTracker::eval(const Value *v) {
   } else if (auto LD = dyn_cast<LoadInst>(v)) {
     auto addr = LD->getPointerOperand();
     if (dyn_cast<AllocaInst>(addr) != NULL) {
+      LLVM_DEBUG(dbgs() << "*** divergent load variable " << v->getName()
+                        << "\n");
+      m_dv.insert(v);
+      return true;
+    }
+    if (m_dv.count(addr) != 0) {
       LLVM_DEBUG(dbgs() << "*** divergent load variable " << v->getName()
                         << "\n");
       m_dv.insert(v);
