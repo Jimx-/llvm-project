@@ -467,6 +467,7 @@ bool RISCVPassConfig::addPreISel() {
     addPass(createLoopSimplifyPass());
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
+    addPass(createUnifyFunctionExitNodesPass());
     addPass(createUnifyLoopExitsPass());
     addPass(createGroomBranchDivergencePrePass());
     addPass(createStructurizeCFGPass(true, true));
