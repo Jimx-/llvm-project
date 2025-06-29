@@ -146,7 +146,6 @@ void GroomBranchDivergencePre::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool GroomBranchDivergencePre::runOnFunction(Function &F) {
-  auto &Context = F.getContext();
   const auto &TPC = getAnalysis<TargetPassConfig>();
   const auto &TM = TPC.getTM<TargetMachine>();
   const auto &ST = TM.getSubtarget<RISCVSubtarget>(F);
@@ -407,9 +406,10 @@ void GroomBranchDivergence::processBranches(LLVMContext *context,
     auto BB = *BI;
     auto Br = dyn_cast<BranchInst>(BB->getTerminator());
     auto ipdom = ipdoms[BB];
-    bool is_sfb =
-        ipdom == Br->getSuccessor(0) ||
-        (ipdom == Br->getSuccessor(1) && m_div_bb_set.count(ipdom) == 0);
+    // bool is_sfb =
+    //     ipdom == Br->getSuccessor(0) ||
+    //     (ipdom == Br->getSuccessor(1) && m_div_bb_set.count(ipdom) == 0);
+    bool is_sfb = false;
 
     IRBuilder<> ir_builder(Br);
     BasicBlock *stub = nullptr;
