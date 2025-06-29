@@ -463,6 +463,7 @@ bool RISCVPassConfig::addPreISel() {
 
   if (getRISCVTargetMachine().isGroom() && EnableGroomBranchDivergence) {
     addPass(createSinkingPass());
+    addPass(createScalarizerPass());
     addPass(createLoopSimplifyPass());
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
