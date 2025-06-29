@@ -38,10 +38,10 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Vectorize/LoopIdiomVectorize.h"
 #include "llvm/Transforms/Scalar/Scalarizer.h"
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
+#include "llvm/Transforms/Vectorize/LoopIdiomVectorize.h"
 #include <optional>
 using namespace llvm;
 
@@ -462,12 +462,11 @@ bool RISCVPassConfig::addPreISel() {
   }
 
   if (getRISCVTargetMachine().isGroom() && EnableGroomBranchDivergence) {
-    addPass(createScalarizerPass());
     addPass(createSinkingPass());
-    addPass(createLoopSimplifyCFGPass());
+    addPass(createLoopSimplifyPass());
     addPass(createLowerSwitchPass());
     addPass(createFlattenCFGPass());
-    addPass(createUnifyFunctionExitNodesPass());
+    addPass(createUnifyLoopExitsPass());
     addPass(createGroomBranchDivergencePrePass());
     addPass(createStructurizeCFGPass(true, true));
     addPass(createGroomBranchDivergencePass());
@@ -596,7 +595,6 @@ void RISCVPassConfig::addFastRegAlloc() {
   addPass(&InitUndefID);
   TargetPassConfig::addFastRegAlloc();
 }
-
 
 void RISCVPassConfig::addPostRegAlloc() {
   if (TM->getOptLevel() != CodeGenOptLevel::None &&

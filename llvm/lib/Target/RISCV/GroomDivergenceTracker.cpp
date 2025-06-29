@@ -1,6 +1,7 @@
 #include "GroomDivergenceTracker.h"
 #include "RISCV.h"
 #include "RISCVSubtarget.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsRISCV.h"
 
 #define CSR_WTID 0xcc0
@@ -27,8 +28,8 @@ void DivergenceTracker::initialize() {
 
   for (auto &BB : *m_function) {
     for (auto &I : BB) {
-      if (auto II = dyn_cast<llvm::IntrinsicInst>(&I)) {
-        if (II->getIntrinsicID() == llvm::Intrinsic::var_annotation) {
+      if (auto II = dyn_cast<IntrinsicInst>(&I)) {
+        if (II->getIntrinsicID() == Intrinsic::var_annotation) {
           auto gv = dyn_cast<GlobalVariable>(II->getOperand(1));
           auto cda = dyn_cast<ConstantDataArray>(gv->getInitializer());
           if (cda->getAsCString() == "groom.uniform") {

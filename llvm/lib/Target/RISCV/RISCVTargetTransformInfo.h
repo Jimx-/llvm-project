@@ -37,6 +37,7 @@ class RISCVTTIImpl : public BasicTTIImplBase<RISCVTTIImpl> {
   const RISCVTargetLowering *TLI;
 
   groom::DivergenceTracker DT;
+  bool hasBranchDivergence_;
 
   const RISCVSubtarget *getST() const { return ST; }
   const RISCVTargetLowering *getTLI() const { return TLI; }
@@ -58,10 +59,12 @@ class RISCVTTIImpl : public BasicTTIImplBase<RISCVTTIImpl> {
   /// type.
   InstructionCost getConstantPoolLoadCost(Type *Ty,
                                           TTI::TargetCostKind CostKind);
+
 public:
   explicit RISCVTTIImpl(const RISCVTargetMachine *TM, const Function &F)
       : BaseT(TM, F.getDataLayout()), ST(TM->getSubtargetImpl(F)),
-        TLI(ST->getTargetLowering()), DT(F) {}
+        TLI(ST->getTargetLowering()), DT(F),
+        hasBranchDivergence_(ST->hasExtGroom()) {}
 
   bool areInlineCompatible(const Function *Caller,
                            const Function *Callee) const;
@@ -235,7 +238,6 @@ public:
       return false;
 
     return TLI->isLegalElementTypeForRVV(ElemType);
-
   }
 
   bool isLegalMaskedLoad(Type *DataType, Align Alignment) {
@@ -397,14 +399,12 @@ public:
   bool isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                      const TargetTransformInfo::LSRCost &C2);
 
-  bool shouldFoldTerminatingConditionAfterLSR() const {
-    return true;
-  }
+  bool shouldFoldTerminatingConditionAfterLSR() const { return true; }
 
   std::optional<unsigned> getMinPageSize() const { return 4096; }
 
   bool isSourceOfDivergence(const Value *v);
-  bool hasBranchDivergence() { return true; }
+  bool hasBranchDivergence(const Function *F) { return hasBranchDivergence_; }
 };
 
 } // end namespace llvm

@@ -8,6 +8,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicsRISCV.h"
+#include "llvm/IR/Module.h"
 
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils.h"
@@ -16,7 +17,6 @@
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
 #include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/Analysis/LegacyDivergenceAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -24,6 +24,7 @@
 #include "llvm/Analysis/RegionIterator.h"
 #include "llvm/Analysis/RegionPass.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/UniformityAnalysis.h"
 
 using namespace llvm;
 
@@ -31,7 +32,7 @@ namespace groom {
 
 class GroomBranchDivergencePre : public FunctionPass {
 private:
-  LegacyDivergenceAnalysis *DA_;
+  UniformityInfo *UA_;
 
 public:
   static char ID;
@@ -53,7 +54,7 @@ class GroomBranchDivergence : public FunctionPass {
   std::vector<Loop *> m_loops;
   DenseSet<Loop *> m_loop_set;
 
-  LegacyDivergenceAnalysis *m_DA;
+  UniformityInfo *m_UA;
   DominatorTree *m_DT;
   PostDominatorTree *m_PDT;
   LoopInfo *m_LI;
@@ -106,8 +107,11 @@ FunctionPass *createGroomBranchDivergencePass() {
 
 } // namespace llvm
 
-INITIALIZE_PASS(GroomBranchDivergencePre, "groom-branch-divergence-pre",
-                "Groom Branch Divergence Prepass", false, false);
+INITIALIZE_PASS_BEGIN(GroomBranchDivergencePre, "groom-branch-divergence-pre",
+                      "Groom Branch Divergence Prepass", false, false);
+INITIALIZE_PASS_DEPENDENCY(UniformityInfoWrapperPass)
+INITIALIZE_PASS_END(GroomBranchDivergencePre, "groom-branch-divergence-pre",
+                    "Groom Branch Divergence Prepass", false, false);
 
 INITIALIZE_PASS_BEGIN(GroomBranchDivergence, "groom-branch-divergence",
                       "Groom Branch Divergence", false, false)
@@ -116,7 +120,7 @@ INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
 INITIALIZE_PASS_DEPENDENCY(RegionInfoPass)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(PostDominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(LegacyDivergenceAnalysis)
+INITIALIZE_PASS_DEPENDENCY(UniformityInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetPassConfig)
 INITIALIZE_PASS_END(GroomBranchDivergence, "groom-branch-divergence",
                     "Groom Branch Divergence", false, false)
@@ -136,7 +140,7 @@ GroomBranchDivergencePre::GroomBranchDivergencePre() : FunctionPass(ID) {
 void GroomBranchDivergencePre::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreservedID(BreakCriticalEdgesID);
   AU.addPreservedID(LowerSwitchID);
-  AU.addRequired<LegacyDivergenceAnalysis>();
+  AU.addRequired<UniformityInfoWrapperPass>();
   AU.addRequired<TargetPassConfig>();
   FunctionPass::getAnalysisUsage(AU);
 }
@@ -149,7 +153,7 @@ bool GroomBranchDivergencePre::runOnFunction(Function &F) {
   if (!ST.hasExtGroom())
     return false;
 
-  DA_ = &getAnalysis<LegacyDivergenceAnalysis>();
+  UA_ = &getAnalysis<UniformityInfoWrapperPass>().getUniformityInfo();
 
   bool changed = false;
 
@@ -157,7 +161,7 @@ bool GroomBranchDivergencePre::runOnFunction(Function &F) {
 
   for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
     if (auto SI = dyn_cast<SelectInst>(&*I)) {
-      if (DA_->isUniform(SI))
+      if (UA_->isUniform(SI))
         continue;
       LLVM_DEBUG(
           dbgs()
@@ -198,7 +202,7 @@ void GroomBranchDivergence::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<RegionInfoPass>();
   AU.addRequired<DominatorTreeWrapperPass>();
   AU.addRequired<PostDominatorTreeWrapperPass>();
-  AU.addRequired<LegacyDivergenceAnalysis>();
+  AU.addRequired<UniformityInfoWrapperPass>();
   AU.addRequired<TargetPassConfig>();
   FunctionPass::getAnalysisUsage(AU);
 }
@@ -228,19 +232,23 @@ void GroomBranchDivergence::initialize(Function &F, const RISCVSubtarget &ST) {
     LLVM_DEBUG(dbgs() << "Error: invalid pointer size: " << ptr_size << "\n");
   }
 
-  m_tmask_func =
-      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_tmask, {m_sizet_ty});
-  m_tmc_func =
-      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_tmc, {m_sizet_ty});
-  m_pred_func =
-      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_pred, {m_sizet_ty});
-  m_split_func =
-      Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_split, {m_sizet_ty});
+  if (ptr_size == 32) {
+    m_tmask_func =
+        Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_tmask_i32);
+    m_tmc_func = Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_tmc_i32);
+    m_pred_func = Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_pred_i32);
+    m_split_func =
+        Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_split_i32);
+  } else {
+    llvm::errs() << "Unsupported pointer size in Groom: " << ptr_size << "\n";
+    abort();
+  }
+
   m_join_func = Intrinsic::getDeclaration(&M, Intrinsic::riscv_gpu_join);
 
   m_RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
   m_LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-  m_DA = &getAnalysis<LegacyDivergenceAnalysis>();
+  m_UA = &getAnalysis<UniformityInfoWrapperPass>().getUniformityInfo();
   m_DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
   m_PDT = &getAnalysis<PostDominatorTreeWrapperPass>().getPostDomTree();
 
@@ -495,7 +503,7 @@ void GroomBranchDivergence::processLoops(LLVMContext *context,
 }
 
 bool GroomBranchDivergence::isUniform(BranchInst *T) {
-  return m_DA->isUniform(T) ||
+  return m_UA->isUniform(T) ||
          (T->getMetadata("structurizecfg.uniform") != nullptr);
 }
 

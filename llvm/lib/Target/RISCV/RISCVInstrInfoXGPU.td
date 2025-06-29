@@ -57,12 +57,16 @@ def CSR_MNT : SysReg<"mnt", 0xFC0>;
 def CSR_MNW : SysReg<"mnw", 0xFC1>;
 def CSR_MNC : SysReg<"mnc", 0xFC2>;
 
-def : Pat<(int_riscv_gpu_tmask), (CSRRS CSR_TMASK.Encoding, X0)>;
+def : Pat<(int_riscv_gpu_tmask_i32), (CSRRS CSR_TMASK.Encoding, (XLenVT X0))>;
+def : Pat<(int_riscv_gpu_tmask_i64), (CSRRS CSR_TMASK.Encoding, (XLenVT X0))>;
 
-def : Pat<(int_riscv_gpu_tmc GPR:$rs2), (GPU_TMC GPR:$rs2)>;
+def : Pat<(int_riscv_gpu_tmc_i32 GPR:$rs2), (GPU_TMC GPR:$rs2)>;
+def : Pat<(int_riscv_gpu_tmc_i64 GPR:$rs2), (GPU_TMC GPR:$rs2)>;
 
-def : Pat<(int_riscv_gpu_pred GPR:$rs2), (GPU_PRED GPR:$rs2)>;
+def : Pat<(int_riscv_gpu_pred_i32 GPR:$rs2), (GPU_PRED GPR:$rs2)>;
+def : Pat<(int_riscv_gpu_pred_i64 GPR:$rs2), (GPU_PRED GPR:$rs2)>;
 
-def : Pat<(int_riscv_gpu_split GPR:$rs2), (GPU_SPLIT GPR:$rs2)>;
+def : Pat<(int_riscv_gpu_split_i32 GPR:$rs2), (GPU_SPLIT GPR:$rs2)>;
+def : Pat<(int_riscv_gpu_split_i64 GPR:$rs2), (GPU_SPLIT GPR:$rs2)>;
 
 def : Pat<(int_riscv_gpu_join), (GPU_JOIN)>;
