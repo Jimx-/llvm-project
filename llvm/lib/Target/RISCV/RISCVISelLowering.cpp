@@ -11,9 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RISCVISelLowering.h"
 #include "MCTargetDesc/RISCVMatInt.h"
 #include "RISCV.h"
+#include "RISCVISelLowering.h"
 #include "RISCVMachineFunctionInfo.h"
 #include "RISCVRegisterInfo.h"
 #include "RISCVSubtarget.h"
@@ -49,6 +49,8 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "riscv-lower"
+
+extern bool gEnableGroomBranchDivergence;
 
 STATISTIC(NumTailCalls, "Number of tail calls");
 
@@ -18112,6 +18114,12 @@ static MachineBasicBlock *emitReadCounterWidePseudo(MachineInstr &MI,
   //   bne x3, x4, read # check if high word reads match, otherwise try again
   // ```
 
+  if (gEnableGroomBranchDivergence &&
+      BB->getParent()->getSubtarget<RISCVSubtarget>().hasExtGroom()) {
+    errs() << "Unsupported divergent read counter wide pseudo\n";
+    std::abort();
+  }
+
   MachineFunction &MF = *BB->getParent();
   const BasicBlock *LLVMBB = BB->getBasicBlock();
   MachineFunction::iterator It = ++BB->getIterator();
@@ -18286,6 +18294,130 @@ static MachineBasicBlock *emitQuietFCMP(MachineInstr &MI, MachineBasicBlock *BB,
   return BB;
 }
 
+static Register emitBrCondCondition(RISCVCC::CondCode CC, Register LHS,
+                                    Register RHS, MachineBasicBlock &MBB,
+                                    const MachineBasicBlock::iterator &loc,
+                                    const DebugLoc &DL,
+                                    const TargetInstrInfo &TII) {
+  auto Result =
+      MBB.getParent()->getRegInfo().createVirtualRegister(&RISCV::GPRRegClass);
+  switch (CC) {
+  case RISCVCC::COND_EQ: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::XOR), Result1).addReg(LHS).addReg(RHS);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTIU), Result)
+        .addReg(Result1)
+        .addImm(1);
+  } break;
+  case RISCVCC::COND_NE: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::XOR), Result1).addReg(LHS).addReg(RHS);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTU), Result)
+        .addReg(RISCV::X0)
+        .addReg(Result1);
+  } break;
+  case RISCVCC::COND_LT:
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLT), Result).addReg(LHS).addReg(RHS);
+    break;
+  case RISCVCC::COND_GE: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLT), Result1).addReg(LHS).addReg(RHS);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::XORI), Result)
+        .addReg(Result1)
+        .addImm(1);
+    break;
+  }
+  case RISCVCC::COND_LTU:
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTU), Result).addReg(LHS).addReg(RHS);
+    break;
+  case RISCVCC::COND_GEU: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTU), Result1)
+        .addReg(LHS)
+        .addReg(RHS);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::XORI), Result)
+        .addReg(Result1)
+        .addImm(1);
+    break;
+  }
+  default:
+    llvm_unreachable("Unknown condition code!");
+  }
+  return Result;
+}
+
+static Register emitBrCondConditionImm(RISCVCC::CondCode CC, Register LHS,
+                                       int64_t ImmVal, MachineBasicBlock &MBB,
+                                       const MachineBasicBlock::iterator &loc,
+                                       const DebugLoc &DL,
+                                       const TargetInstrInfo &TII) {
+  auto Result =
+      MBB.getParent()->getRegInfo().createVirtualRegister(&RISCV::GPRRegClass);
+  switch (CC) {
+  case RISCVCC::COND_EQ: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::XORI), Result1)
+        .addReg(LHS)
+        .addImm(ImmVal);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTIU), Result)
+        .addReg(Result1)
+        .addImm(1);
+    break;
+  }
+  case RISCVCC::COND_NE: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::XORI), Result1)
+        .addReg(LHS)
+        .addImm(ImmVal);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTU), Result)
+        .addReg(RISCV::X0)
+        .addReg(Result1);
+    break;
+  }
+  case RISCVCC::COND_LT:
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTI), Result)
+        .addReg(LHS)
+        .addImm(ImmVal);
+    break;
+  case RISCVCC::COND_GE: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTI), Result1)
+        .addReg(LHS)
+        .addImm(ImmVal);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTIU), Result)
+        .addReg(Result1)
+        .addImm(1);
+    break;
+  }
+  case RISCVCC::COND_LTU:
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTIU), Result)
+        .addReg(LHS)
+        .addImm(ImmVal);
+    break;
+  case RISCVCC::COND_GEU: {
+    auto Result1 = MBB.getParent()->getRegInfo().createVirtualRegister(
+        &RISCV::GPRRegClass);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTIU), Result1)
+        .addReg(LHS)
+        .addImm(ImmVal);
+    BuildMI(MBB, loc, DL, TII.get(RISCV::SLTIU), Result)
+        .addReg(Result1)
+        .addImm(1);
+    break;
+  }
+  default:
+    llvm_unreachable("Unknown condition code!");
+  }
+  return Result;
+}
+
 static MachineBasicBlock *
 EmitLoweredCascadedSelect(MachineInstr &First, MachineInstr &Second,
                           MachineBasicBlock *ThisMBB,
@@ -18324,6 +18456,11 @@ EmitLoweredCascadedSelect(MachineInstr &First, MachineInstr &Second,
   // A: X = ...; Y = ...
   // D: empty
   // E: PHI [X, A], [X, C], [Y, D]
+
+  if (gEnableGroomBranchDivergence && Subtarget.hasExtGroom()) {
+    errs() << "Unsupported divergent cascaded select\n";
+    std::abort();
+  }
 
   const RISCVInstrInfo &TII = *Subtarget.getInstrInfo();
   const DebugLoc &DL = First.getDebugLoc();
@@ -18502,16 +18639,34 @@ static MachineBasicBlock *emitSelectPseudo(MachineInstr &MI,
   HeadMBB->addSuccessor(TailMBB);
 
   // Insert appropriate branch.
-  if (MI.getOperand(2).isImm())
-    BuildMI(HeadMBB, DL, TII.getBrCond(CC, MI.getOperand(2).isImm()))
-        .addReg(LHS)
-        .addImm(MI.getOperand(2).getImm())
+  if (Subtarget.hasExtGroom() && gEnableGroomBranchDivergence) {
+    Register Cond;
+    if (MI.getOperand(2).isImm()) {
+      Cond = emitBrCondConditionImm(CC, LHS, MI.getOperand(2).getImm(),
+                                    *HeadMBB, HeadMBB->end(), DL, TII);
+    } else {
+      Cond =
+          emitBrCondCondition(CC, LHS, RHS, *HeadMBB, HeadMBB->end(), DL, TII);
+    }
+
+    BuildMI(HeadMBB, DL, TII.get(RISCV::GPU_SPLIT)).addReg(Cond);
+    BuildMI(HeadMBB, DL, TII.getBrCond(RISCVCC::COND_NE))
+        .addReg(Cond)
+        .addReg(RISCV::X0)
         .addMBB(TailMBB);
-  else
-    BuildMI(HeadMBB, DL, TII.getBrCond(CC))
-        .addReg(LHS)
-        .addReg(RHS)
-        .addMBB(TailMBB);
+    BuildMI(*TailMBB, TailMBB->begin(), DL, TII.get(RISCV::GPU_JOIN));
+  } else {
+    if (MI.getOperand(2).isImm())
+      BuildMI(HeadMBB, DL, TII.getBrCond(CC, MI.getOperand(2).isImm()))
+          .addReg(LHS)
+          .addImm(MI.getOperand(2).getImm())
+          .addMBB(TailMBB);
+    else
+      BuildMI(HeadMBB, DL, TII.getBrCond(CC))
+          .addReg(LHS)
+          .addReg(RHS)
+          .addMBB(TailMBB);
+  }
 
   // IfFalseMBB just falls through to TailMBB.
   IfFalseMBB->addSuccessor(TailMBB);
@@ -18616,6 +18771,11 @@ static MachineBasicBlock *emitVFROUND_NOEXCEPT_MASK(MachineInstr &MI,
 
 static MachineBasicBlock *emitFROUND(MachineInstr &MI, MachineBasicBlock *MBB,
                                      const RISCVSubtarget &Subtarget) {
+  if (gEnableGroomBranchDivergence && Subtarget.hasExtGroom()) {
+    errs() << "Unsupported divergent FROUND\n";
+    std::abort();
+  }
+
   unsigned CmpOpc, F2IOpc, I2FOpc, FSGNJOpc, FSGNJXOpc;
   const TargetRegisterClass *RC;
   switch (MI.getOpcode()) {

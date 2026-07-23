@@ -109,6 +109,7 @@ static cl::opt<bool> EnableVSETVLIAfterRVVRegAlloc(
 static cl::opt<int> EnableGroomBranchDivergence(
     "groom-branch-divergence",
     cl::desc("Enable Branch Divergence Instrumentation"), cl::init(1));
+bool gEnableGroomBranchDivergence = false;
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   RegisterTargetMachine<RISCVTargetMachine> X(getTheRISCV32Target());
@@ -137,6 +138,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVPushPopOptPass(*PR);
 
   if (EnableGroomBranchDivergence) {
+    gEnableGroomBranchDivergence = true;
     initializeGroomBranchDivergencePrePass(*PR);
     initializeGroomBranchDivergencePass(*PR);
   }

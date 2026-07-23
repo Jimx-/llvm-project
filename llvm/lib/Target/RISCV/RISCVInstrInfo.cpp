@@ -78,6 +78,27 @@ RISCVInstrInfo::RISCVInstrInfo(RISCVSubtarget &STI)
     : RISCVGenInstrInfo(RISCV::ADJCALLSTACKDOWN, RISCV::ADJCALLSTACKUP),
       STI(STI) {}
 
+bool RISCVInstrInfo::isSchedulingBoundary(const MachineInstr &MI,
+                                          const MachineBasicBlock *MBB,
+                                          const MachineFunction &MF) const {
+  if (TargetInstrInfo::isSchedulingBoundary(MI, MBB, MF))
+    return true;
+
+  // These instructions change the active-thread mask (or synchronize lanes).
+  // Instructions must not move across them: doing so can change which lanes
+  // execute an instruction even when there is no scalar register dependency.
+  switch (MI.getOpcode()) {
+  case RISCV::GPU_TMC:
+  case RISCV::GPU_SPLIT:
+  case RISCV::GPU_JOIN:
+  case RISCV::GPU_BARRIER:
+  case RISCV::GPU_PRED:
+    return true;
+  default:
+    return false;
+  }
+}
+
 MCInst RISCVInstrInfo::getNop() const {
   if (STI.hasStdExtCOrZca())
     return MCInstBuilder(RISCV::C_NOP);

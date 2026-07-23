@@ -151,6 +151,8 @@ bool GroomBranchDivergencePre::runOnFunction(Function &F) {
   const auto &ST = TM.getSubtarget<RISCVSubtarget>(F);
   if (!ST.hasExtGroom())
     return false;
+  if (ST.hasStdExtZicond())
+    return false;
 
   UA_ = &getAnalysis<UniformityInfoWrapperPass>().getUniformityInfo();
 
@@ -160,8 +162,13 @@ bool GroomBranchDivergencePre::runOnFunction(Function &F) {
 
   for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
     if (auto SI = dyn_cast<SelectInst>(&*I)) {
-      if (UA_->isUniform(SI))
+      // Executing a select without control-flow reconvergence is safe when
+      // every lane makes the same choice.  The selected values (and therefore
+      // the result) may still be divergent, so classify the condition rather
+      // than the SelectInst itself.
+      if (UA_->isUniform(SI->getCondition()))
         continue;
+
       LLVM_DEBUG(
           dbgs()
           << "*** lowering divergent select instruction to if-then-else: "
