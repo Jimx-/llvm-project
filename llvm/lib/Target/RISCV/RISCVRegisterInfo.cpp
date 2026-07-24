@@ -144,6 +144,9 @@ BitVector RISCVRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   markSuperRegs(Reserved, RISCV::FRM);
   markSuperRegs(Reserved, RISCV::FFLAGS);
 
+  // GROOM thread-mask state register.
+  markSuperRegs(Reserved, RISCV::TMASK);
+
   // SiFive VCIX state registers.
   markSuperRegs(Reserved, RISCV::VCIX_STATE);
 

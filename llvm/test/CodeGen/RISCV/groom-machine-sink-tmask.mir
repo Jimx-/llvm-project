@@ -1,0 +1,45 @@
+# RUN: llc -mtriple=riscv32 -mattr=+groom -run-pass=machine-sink -o - %s \
+# RUN:   | FileCheck %s
+
+# gpu_pred changes tmask. Keep the LUI before it because the LUI must execute
+# with the old lane mask even though its register result is only used in bb.1.
+
+---
+name:            tmask_dependency
+tracksRegLiveness: true
+body:             |
+  ; CHECK-LABEL: name: tmask_dependency
+  ; CHECK: bb.0:
+  ; CHECK: [[LUI:%[0-9]+]]:gpr = LUI 1, implicit $tmask
+  ; CHECK-NEXT: GPU_PRED
+  ; CHECK: bb.1:
+  ; CHECK-NOT: LUI
+  ; CHECK: ADDI [[LUI]], 5, implicit $tmask
+  bb.0:
+    successors: %bb.1(0x40000000), %bb.2(0x40000000)
+    liveins: $x10, $tmask
+
+    %0:gpr = COPY $x10, implicit $tmask
+    %1:gpr = LUI 1, implicit $tmask
+    GPU_PRED %0, implicit-def $tmask, implicit $tmask
+    BEQ %0, $x0, %bb.2, implicit $tmask
+    PseudoBR %bb.1, implicit $tmask
+
+  bb.1:
+    successors: %bb.3(0x80000000)
+    liveins: $tmask
+
+    %2:gpr = ADDI %1, 5, implicit $tmask
+    PseudoBR %bb.3, implicit $tmask
+
+  bb.2:
+    successors: %bb.3(0x80000000)
+    liveins: $tmask
+
+    PseudoBR %bb.3, implicit $tmask
+
+  bb.3:
+    liveins: $tmask
+
+    PseudoRET implicit $tmask
+...

@@ -3,6 +3,7 @@ def OPC_GPU      : RISCVOpcode<"GPU", 0b1011011>;
 
 let hasSideEffects = 1, mayStore = 1 , mayLoad = 1 in {
 
+let Defs = [TMASK], Uses = [TMASK] in
 def GPU_TMC : RVInstS<0, OPC_GPU_CTRL, (outs), (ins GPR:$rs2), "gpu_tmc", "$rs2">, Sched<[]> {
     let imm12 = 0;
     let rs1   = 0;
@@ -27,6 +28,7 @@ def GPU_BARRIER : RVInstS<4, OPC_GPU_CTRL, (outs), (ins GPR:$rs1, GPR:$rs2), "gp
     let imm12 = 0;
 }
 
+let Defs = [TMASK], Uses = [TMASK] in
 def GPU_PRED : RVInstS<5, OPC_GPU_CTRL, (outs), (ins GPR:$rs2), "gpu_pred", "$rs2">, Sched<[]> {
     let imm12 = 0;
     let rs1   = 0;

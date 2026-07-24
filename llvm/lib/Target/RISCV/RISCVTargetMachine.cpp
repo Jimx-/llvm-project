@@ -136,6 +136,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVDAGToDAGISelLegacyPass(*PR);
   initializeRISCVMoveMergePass(*PR);
   initializeRISCVPushPopOptPass(*PR);
+  initializeGroomTMaskDependencyPass(*PR);
 
   if (EnableGroomBranchDivergence) {
     gEnableGroomBranchDivergence = true;
@@ -529,6 +530,8 @@ void RISCVPassConfig::addPreSched2() {
 
   // Emit KCFI checks for indirect calls.
   addPass(createKCFIPass());
+  if (m_isGroom)
+    addPass(createGroomTMaskDependencyPass());
 }
 
 void RISCVPassConfig::addPreEmitPass() {
@@ -562,9 +565,14 @@ void RISCVPassConfig::addPreEmitPass2() {
   addPass(createUnpackMachineBundles([&](const MachineFunction &MF) {
     return MF.getFunction().getParent()->getModuleFlag("kcfi");
   }));
+  if (m_isGroom)
+    addPass(createGroomTMaskDependencyPass());
 }
 
 void RISCVPassConfig::addMachineSSAOptimization() {
+  if (m_isGroom)
+    addPass(createGroomTMaskDependencyPass());
+
   addPass(createRISCVVectorPeepholePass());
 
   TargetPassConfig::addMachineSSAOptimization();
@@ -584,6 +592,8 @@ void RISCVPassConfig::addPreRegAlloc() {
 
   addPass(createRISCVInsertReadWriteCSRPass());
   addPass(createRISCVInsertWriteVXRMPass());
+  if (m_isGroom)
+    addPass(createGroomTMaskDependencyPass());
 
   // Run RISCVInsertVSETVLI after PHI elimination. On O1 and above do it after
   // register coalescing so needVSETVLIPHI doesn't need to look through COPYs.
@@ -604,6 +614,8 @@ void RISCVPassConfig::addPostRegAlloc() {
   if (TM->getOptLevel() != CodeGenOptLevel::None &&
       EnableRedundantCopyElimination)
     addPass(createRISCVRedundantCopyEliminationPass());
+  if (m_isGroom)
+    addPass(createGroomTMaskDependencyPass());
 }
 
 void RISCVTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {

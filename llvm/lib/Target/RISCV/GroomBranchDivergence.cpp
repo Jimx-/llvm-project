@@ -413,10 +413,9 @@ void GroomBranchDivergence::processBranches(LLVMContext *context,
     auto BB = *BI;
     auto Br = dyn_cast<BranchInst>(BB->getTerminator());
     auto ipdom = ipdoms[BB];
-    // bool is_sfb =
-    //     ipdom == Br->getSuccessor(0) ||
-    //     (ipdom == Br->getSuccessor(1) && m_div_bb_set.count(ipdom) == 0);
-    bool is_sfb = false;
+    bool is_sfb =
+        ipdom == Br->getSuccessor(0) ||
+        (ipdom == Br->getSuccessor(1) && m_div_bb_set.count(ipdom) == 0);
 
     IRBuilder<> ir_builder(Br);
     BasicBlock *stub = nullptr;

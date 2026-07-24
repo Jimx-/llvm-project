@@ -627,6 +627,9 @@ foreach m = LMULList in {
 def FFLAGS : RISCVReg<0, "fflags">;
 def FRM    : RISCVReg<0, "frm">;
 
+// Dummy GROOM thread-mask state register.
+def TMASK  : RISCVReg<0, "tmask">;
+
 // Shadow Stack register
 def SSP    : RISCVReg<0, "ssp">;
 

@@ -100,6 +100,9 @@ void initializeGroomBranchDivergencePrePass(PassRegistry &);
 FunctionPass *createGroomBranchDivergencePass();
 void initializeGroomBranchDivergencePass(PassRegistry &);
 
+FunctionPass *createGroomTMaskDependencyPass();
+void initializeGroomTMaskDependencyPass(PassRegistry &);
+
 } // namespace llvm
 
 #endif
