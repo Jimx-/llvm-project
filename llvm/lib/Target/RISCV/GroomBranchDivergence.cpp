@@ -260,6 +260,8 @@ void GroomBranchDivergence::initialize(Function &F, const RISCVSubtarget &ST) {
 
   m_div_bbs.clear();
   m_div_bb_set.clear();
+  m_loops.clear();
+  m_loop_set.clear();
 }
 
 bool GroomBranchDivergence::runOnFunction(Function &F) {
