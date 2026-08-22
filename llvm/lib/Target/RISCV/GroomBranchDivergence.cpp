@@ -490,12 +490,13 @@ void GroomBranchDivergence::processLoops(LLVMContext *context,
 
         IRBuilder<> ir_builder(br);
         auto cond = br->getCondition();
-        auto cond_not = ir_builder.CreateNot(cond, cond->getName() + ".not");
-        auto cond_not_cast = ir_builder.CreateIntCast(
-            cond_not, m_sizet_ty, false, cond_not->getName() + ".i32");
+        if (succ == br->getSuccessor(0))
+          cond = ir_builder.CreateNot(cond, cond->getName() + ".not");
+        auto cond_cast = ir_builder.CreateIntCast(
+            cond, m_sizet_ty, false, cond->getName() + ".i32");
         LLVM_DEBUG(dbgs() << "*** insert predicate before loop exit: "
                           << p->getName() << "\n");
-        CallInst::Create(m_pred_func, cond_not_cast, "", br);
+        CallInst::Create(m_pred_func, cond_cast, "", br);
 
         auto stub =
             BasicBlock::Create(*context, "loop_exit_stub", function, succ);
