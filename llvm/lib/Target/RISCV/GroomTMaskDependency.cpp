@@ -46,11 +46,41 @@ char GroomTMaskDependency::ID = 0;
 INITIALIZE_PASS(GroomTMaskDependency, DEBUG_TYPE, GROOM_TMASK_DEPENDENCY_NAME,
                 false, false)
 
+static bool movePredicatesBeforeTerminators(MachineFunction &MF) {
+  bool Changed = false;
+  for (MachineBasicBlock &MBB : MF) {
+    MachineBasicBlock::iterator FirstTerminator = MBB.getFirstTerminator();
+    if (FirstTerminator == MBB.end())
+      continue;
+
+    SmallVector<MachineInstr *, 4> Predicates;
+    for (MachineBasicBlock::iterator I = MBB.begin(); I != FirstTerminator; ++I)
+      if (I->getOpcode() == RISCV::GPU_PRED)
+        Predicates.push_back(&*I);
+
+    for (MachineInstr *Predicate : Predicates) {
+      MachineBasicBlock::iterator PredicateI = Predicate->getIterator();
+      if (std::next(PredicateI) == FirstTerminator)
+        continue;
+
+      // SelectionDAG emits constants for successor PHIs while it lowers the
+      // predecessor terminator. Keep these edge values under the old mask.
+      MBB.splice(FirstTerminator, &MBB, PredicateI);
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 bool GroomTMaskDependency::runOnMachineFunction(MachineFunction &MF) {
   if (!MF.getSubtarget<RISCVSubtarget>().hasExtGroom())
     return false;
 
-  bool Changed = false;
+  // GPU_PRED is inserted immediately before an IR branch. Instruction
+  // selection can place successor-PHI materializations after it. Move the
+  // predicate back next to the machine branch before tmask dependencies lock
+  // the instruction order.
+  bool Changed = movePredicatesBeforeTerminators(MF);
   for (MachineBasicBlock &MBB : MF) {
     for (MachineInstr &MI : MBB) {
       if (MI.isMetaInstruction() || MI.isPHI())

@@ -12,12 +12,13 @@ then:
   br label %merge
 
 merge:
-  %result = phi i32 [ 0, %entry ], [ %value, %then ]
+  %result = phi i32 [ 7, %entry ], [ %value, %then ]
   ret i32 %result
 }
 
 ; MIR-LABEL: name: sfb
-; MIR: GPU_PRED
+; MIR: ADDI $x0, 7, implicit $tmask
+; MIR-NEXT: GPU_PRED
 ; MIR-SAME: implicit-def $tmask
 ; MIR-SAME: implicit $tmask
 ; MIR: LW {{.*}} implicit $tmask
@@ -27,6 +28,7 @@ merge:
 
 ; ASM-LABEL: sfb:
 ; ASM-NOT: gpu_split
-; ASM: gpu_pred
+; ASM: li {{[a-z0-9]+}}, 7
+; ASM-NEXT: gpu_pred
 ; ASM: lw
 ; ASM: gpu_tmc
