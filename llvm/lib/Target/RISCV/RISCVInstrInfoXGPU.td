@@ -1,7 +1,7 @@
 def OPC_GPU_CTRL : RISCVOpcode<"GPU_CTRL", 0b1101011>;
 def OPC_GPU      : RISCVOpcode<"GPU", 0b1011011>;
 
-let hasSideEffects = 1, mayStore = 1 , mayLoad = 1 in {
+let hasSideEffects = 1, mayStore = 1, mayLoad = 1, isNotDuplicable = 1 in {
 
 let Defs = [TMASK], Uses = [TMASK] in
 def GPU_TMC : RVInstS<0, OPC_GPU_CTRL, (outs), (ins GPR:$rs2), "gpu_tmc", "$rs2">, Sched<[]> {
